@@ -2,16 +2,15 @@
 해당 예제는 프로젝트들을 사용해 보았으나 [코틀린 공식문서](https://kotlinlang.org/docs/coroutines-guide.html#table-of-contents)에 있는 코루틴 튜토리얼을 실습해보면서 파트를 작성하는게 보다 나을것이여서 예제위주로 작성하였습니다.
 ***
  ## :wrench: 프로젝트 사용 사례
-<img src="https://user-images.githubusercontent.com/48902047/134470411-a786e31b-a658-455a-af1b-8854f22d7369.jpg" width="20%" height="20%"></img>
-<img src="https://user-images.githubusercontent.com/48902047/134470456-bf0f37e3-87a8-4d3f-b94d-14d6147691c3.jpg" width="20%" height="20%"></img>
-<img src="https://user-images.githubusercontent.com/48902047/134470695-77c7be06-b2bf-4e84-971f-013b63e42d82.jpg" width="20%" height="20%"></img>
-<img src="https://user-images.githubusercontent.com/48902047/134470599-1e025c6d-c5ab-4825-be2b-58c838b36465.jpg" width="20%" height="20%"></img>
-
+ 
  + [코루틴 깃허브 레파지토리 앱](https://github.com/tnvnfdla1214/github_repository)
  ***
  ## :lollipop: 예제
  본예제 실습 환경을 안드로이드 스튜디오 Junit4에서 작성되었습니다.
  해당 예제들은 코루틴 깃허브 레파지토리 앱의 테스트 레파지토리에 있으니 확인 가능합니다.
+ 
+ ***
+ 
  ### Basic
  - Coroutine Builder
    - launch
@@ -153,6 +152,8 @@ World!!!!!!!!
    I'm sleeping 1 ...
    I'm sleeping 2 ...
 ```
+***
+
  ### Cancellation and Timeouts
  - Job
     - cancel()
@@ -296,4 +297,277 @@ main: Now I can quit.
         job.cancelAndJoin() // cancels the job and waits for its completion
         println("main: Now I can quit.")
     }
+```
+
+***
+
+### Composing Suspending Functions
+
++ Async to sequential
+   + Sequential by default
+   + the Dream Code on Android
++ async
+   + concurrent using async
+   + Lazily started async
++ Structured concurrency
+   + Async-style functions (strongly discouraged)
+   + Structured concurrency with async
+
+다음 예시는 헤비한 두 함수를 비동기로 처리할때 순차적으로 실행 하고싶을때 어떻게 할 수 있는지 보여주는 예시이다.
+
+결론은 그냥 코드짜듯이 아래에 작성하기만 해도 순차적으로 작성됨을 알 수 있다.
+```Kotlin
+    fun main1() = runBlocking {
+        val time = measureTimeMillis {
+            val one = doSomethingUsefulOne()
+            val two = doSomethingUsefulTwo()
+            println("The answer is ${one + two}")
+        }
+        println("Completed in $time ms")
+    }
+
+    suspend fun doSomethingUsefulOne(): Int {
+        println("doSomethingUsefulOne")
+        delay(4000L) // 해당자리는 서버와 같은 해비한 연산을 하는 자리
+        println("onefinish")
+        return 13
+    }
+
+    suspend fun doSomethingUsefulTwo(): Int {
+        println("doSomethingUsefulTwo")
+        delay(1000L)
+        println("Twofinish")
+        return 29
+    }
+```
+```Kotlin
+doSomethingUsefulOne
+onefinish
+doSomethingUsefulTwo
+Twofinish
+The answer is 42
+Completed in 5052 ms
+```
+하지만 만약 독립적으로 실행순서와 상관없이 실행하고 싶다면 async를 감싸 독립적인 코루틴을 만들어준다.
+
+하지만 값을 프린트 할때에는 one.await()와 같은 함수로 기다렸다가 값을 출력한다.
+
+async는 job을 반환하는데 이떄 job의 함수를 이용할 수 있기에 자유자재로 동시하는것과 순차적인것이 둘 다 가능해진다.
+```Kotlin
+    fun main1() = runBlocking {
+        val time = measureTimeMillis {
+            val one = async{doSomethingUsefulOne()}
+            val two = async{doSomethingUsefulTwo()}
+            println("The answer is ${one.await() + two.await()}")
+        }
+        println("Completed in $time ms")
+    }
+
+    suspend fun doSomethingUsefulOne(): Int {
+        println("doSomethingUsefulOne")
+        delay(4000L) // 해당자리는 서버와 같은 해비한 연산을 하는 자리
+        println("onefinish")
+        return 13
+    }
+
+    suspend fun doSomethingUsefulTwo(): Int {
+        println("doSomethingUsefulTwo")
+        delay(1000L)
+        println("Twofinish")
+        return 29
+    }
+```
+```Kotlin
+doSomethingUsefulOne
+doSomethingUsefulTwo
+Twofinish
+onefinish
+The answer is 42
+Completed in 4065 ms
+```
+다음은 start함수와 Lazy함수의 사용이다.
+
+Lazy함수는 시작하는것을 기다려주고 start함수를 만나면 코루틴을 시작한다.
+
+```Kotlin
+    fun main1() = runBlocking {
+        val time = measureTimeMillis {
+            val one = async(start = CoroutineStart.LAZY) { doSomethingUsefulOne() }
+            val two = async(start = CoroutineStart.LAZY) { doSomethingUsefulTwo() }
+            one.start() // one을 시작한다.
+            two.start() // two를 시작한다.
+            println("The answer is ${one.await() + two.await()}")
+        }
+        println("Completed in $time ms")
+    }
+
+    suspend fun doSomethingUsefulOne(): Int {
+        delay(1000L) // pretend we are doing something useful here
+        return 13
+    }
+
+    suspend fun doSomethingUsefulTwo(): Int {
+        delay(1000L) // pretend we are doing something useful here, too
+        return 29
+    }
+```
+```Kotlin
+The answer is 42
+Completed in 1071 ms
+```
+위와 같이 start를 만나 동시에 시작하므로 1초가 걸리는것을 볼 수 있다.
+
+하지만 만약 start가 없다면 2초가 걸리는 것 을 알 수있다.
+
+왜냐하면 awit문은 함수의 결과가 끝날때까지 기다리는 함수이기 때문이다.
+
+```Kotlin
+The answer is 42
+Completed in 2082 ms
+```
+다음 예시는 함수로 자체적으로 만들어줬을때의 문제를 보여주는 예시이다.
+
+아래 예시에서는 try안에서 코루틴함수인 one,two가 실행 되고 나서 exception이 터진다면 멈춰야 하는데 계속 실행되는것을 보여준다.
+
+```Kotlin
+    fun main2() {
+        try {
+            val time = measureTimeMillis {
+                val one = SomethingUsefulOneAsync();
+                val two = SomethingUsefulTwosync();
+                println("my execeptions")
+                throw Exception("my execeptions")
+
+                runBlocking {
+                    println("The answer is ${one.await()+two.await()}")
+                }
+            }
+            println("Completed in $time ms")
+        }catch (e : Exception){
+        }
+        runBlocking {
+            delay(100000)
+        }
+
+    }
+    fun SomethingUsefulOneAsync() = GlobalScope.async {
+        println("start, SomethingUsefulOneAsync")
+        val res=doSomethingUsefulOne()
+        println("end, SomethingUsefulOneAsync")
+        res
+    }
+    fun SomethingUsefulTwosync() = GlobalScope.async {
+        println("start, SomethingUsefulTwosync")
+        val res=doSomethingUsefulOne()
+        println("end, SomethingUsefulTwosync")
+        res
+    }
+    suspend fun doSomethingUsefulOne(): Int {
+        delay(1000L) // pretend we are doing something useful here
+        return 13
+    }
+
+    suspend fun doSomethingUsefulTwo(): Int {
+        delay(1000L) // pretend we are doing something useful here, too
+        return 29
+    }
+```
+```Kotlin
+my execeptions
+start, SomethingUsefulTwosync
+start, SomethingUsefulOneAsync
+end, SomethingUsefulTwosync
+end, SomethingUsefulOneAsync
+```
+이에 대한 해결책은 다음과 같다.
+```Kotlin
+    fun main3() = runBlocking{
+        val time = measureTimeMillis {
+            println("The answer is ${concurrentSum()}")
+        }
+        println("Completed in $time ms")
+    }
+    suspend fun concurrentSum() : Int = coroutineScope {
+        val one = async{ doSomethingUsefulOne() }
+        val two = async{ doSomethingUsefulTwo() }
+        one.await()+two.await()
+    }
+    suspend fun doSomethingUsefulOne(): Int {
+        delay(1000L) // pretend we are doing something useful here
+        return 13
+    }
+
+    suspend fun doSomethingUsefulTwo(): Int {
+        delay(1000L) // pretend we are doing something useful here, too
+        return 29
+    }
+```
+
+***
+### Coroutines under ths hood
+이번 차트에서는 취소와 중단, 자바에서는 가능하지 않지만 코틀린에서는 가능한가 등 코루틴의 동작원리를 간단히 알아보려한다.
+
+[KotlinConf 2017](https://www.youtube.com/watch?v=YrrUCSi72E8)
+
+에서 보면 코루틴은 마법같이 느껴지지만 마법은 없다라고 알려준다.
+
+간단히 말해서 Continuation Passing Style(CPS)로 만들어지게 되는데 이는 Continuations 이란 변수가 추가되면서 매번 모든 코드가 스위치에 case를 돌듯 확인을 하면서 가는 방식이다.
+Continuations은 Calback 을 넘겨주는 함수이다.
+
+### Coroutine Context and Dispatchers
+각각에는 디스패처를 변경해줄 수 있는데 결과값과 같이 실행하고 있는 Thread가 다 다르다.
+```Kotlin
+    fun main1() = runBlocking<Unit> {
+        launch { // context of the parent, main runBlocking coroutine
+            println("main runBlocking      : I'm working in thread ${Thread.currentThread().name}")
+        }
+        launch(Dispatchers.Unconfined) { // not confined -- will work with main thread
+            println("Unconfined            : I'm working in thread ${Thread.currentThread().name}")
+        }
+        launch(Dispatchers.Default) { // will get dispatched to DefaultDispatcher
+            println("Default               : I'm working in thread ${Thread.currentThread().name}")
+        }
+        launch(newSingleThreadContext("MyOwnThread")) { // will get its own new thread
+            println("newSingleThreadContext: I'm working in thread ${Thread.currentThread().name}")
+        }
+    }
+```
+```Kotlin
+Unconfined            : I'm working in thread main @coroutine#3
+Default               : I'm working in thread DefaultDispatcher-worker-1 @coroutine#4
+newSingleThreadContext: I'm working in thread MyOwnThread @coroutine#5
+main runBlocking      : I'm working in thread main @coroutine#2
+```
+다음은 코루틴 스코프의 예시이다.
+
+예를들면 Activity에서 코루틴을 사용하다가 Activity가 종료됨에 따라 같이 종료 하고 싶을때 매번 종료하기보다는 Context를 연결하여 실행시켜준다.
+
+이처럼 안드로이드에서는 코루틴 스코트를 이용하여 생명주기에 맞추어 개발하면 된다.
+
+```Kotlin
+class Coroutine_Context_and_Dispatchers {
+    private val mainScope = MainScope()
+
+    fun destroy() {
+        mainScope.cancel()
+    }
+    fun doSomething() {
+        // launch ten coroutines for a demo, each working for a different time
+        repeat(10) { i ->
+            mainScope.launch {
+                delay((i + 1) * 200L) // variable delay 200ms, 400ms, ... etc
+                println("Coroutine $i is done")
+            }
+        }
+    }
+} // class Activity ends
+fun main() = runBlocking {
+    val activity = Coroutine_Context_and_Dispatchers()
+    activity.doSomething() // run test function
+    println("Launched coroutines")
+    delay(500L) // delay for half a second
+    println("Destroying activity!")
+    activity.destroy() // cancels all coroutines
+    delay(3000) // visually confirm that they don't work
+}
 ```
